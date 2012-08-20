@@ -1,7 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.VisualStudio.TestPlatform.UnitTestFramework;
 using PlistCS;
+using System.Threading.Tasks;
+using Windows.System;
+using Windows.Storage;
+using Windows.Storage.Streams;
 
 namespace Testing
 {
@@ -14,7 +19,7 @@ namespace Testing
         string sourceBinPath = "testBin.plist";
         string sourceImage   = "testImage.jpg";
 
-        private Dictionary<string, object> CreateDictionary()
+        private async Task<Dictionary<string, object>> CreateDictionary()
         {
             const int largeCollectionSize = 18;
 
@@ -31,11 +36,12 @@ namespace Testing
                 largeDict.Add(key, i);
             }
 
-#if false
-            // TODO make valid data.
-            using (BinaryReader br = new BinaryReader(File.OpenRead(sourceImage)))
+            var imageFile = await StorageFile.GetFileFromPathAsync(sourceImage);
+            using (var s = await imageFile.OpenStreamForReadAsync())
             {
-                dict.Add("testImage", br.ReadBytes((int)br.BaseStream.Length));
+                using (var br = new BinaryReader(s)) {
+                    dict.Add("testImage", br.ReadBytes((int)br.BaseStream.Length));
+                }
             }
             dict.Add("testDate", PlistDateConverter.ConvertFromAppleTimeStamp(338610664L));
             dict.Add("testInt", -3455);
@@ -47,14 +53,13 @@ namespace Testing
             dict.Add("testArrayLarge", largeArray);
             dict.Add("testDict", new Dictionary<string, object> { { "test string", "inner dict item" } });
             dict.Add("testDictLarge", largeDict);
-#endif
 
             return dict;
         }
 
-        private void CheckDictionary(Dictionary<string, object> dict)
+        private async Task CheckDictionary(Dictionary<string, object> dict)
         {
-            Dictionary<string, object> actualDict = CreateDictionary();
+            Dictionary<string, object> actualDict = await CreateDictionary();
             Assert.AreEqual(dict["testDate"], actualDict["testDate"], "Dates do not correspond.");
             Assert.AreEqual(dict["testInt"], actualDict["testInt"], "Integers do not correspond.");
             Assert.AreEqual(dict["testDouble"], actualDict["testDouble"], "Reals do not correspond.");
@@ -68,36 +73,66 @@ namespace Testing
             CollectionAssert.AreEquivalent((Dictionary<string, object>)dict["testDictLarge"], (Dictionary<string, object>)actualDict["testDictLarge"], "Large dictionaries do not correspond.");
         }
 
+        private void waitTaskCompletion(Task task)
+        {
+            while (!task.IsCompleted) {
+                // busy loop.
+            }
+            if (task.Exception != null) {
+                throw task.Exception.InnerException;
+            }
+        }
+
         [TestMethod]
         public void ReadBinary()
         {
-            CheckDictionary((Dictionary<string, object>)Plist.readPlist(sourceBinPath));
+            var t = CheckDictionary((Dictionary<string, object>)Plist.readPlist(sourceBinPath));
+            waitTaskCompletion(t);
         }
 
         [TestMethod]
         public void ReadXml()
         {
-            CheckDictionary((Dictionary<string, object>)Plist.readPlist(sourceXmlPath));
+            var t = CheckDictionary((Dictionary<string, object>)Plist.readPlist(sourceXmlPath));
+            waitTaskCompletion(t);
         }
 
         [TestMethod]
         public void WriteBinary()
         {
-            Plist.writeBinary(CreateDictionary(), targetBinPath);
-            CheckDictionary((Dictionary<string, object>)Plist.readPlist(targetBinPath));
+            var t = WriteBinaryInner();
+            waitTaskCompletion(t);
+        }
+
+        private async Task WriteBinaryInner()
+        {
+            Plist.writeBinary(await CreateDictionary(), targetBinPath);
+            await CheckDictionary((Dictionary<string, object>)Plist.readPlist(targetBinPath));
         }
 
         [TestMethod]
         public void WriteXml()
         {
-            Plist.writeXml(CreateDictionary(), targetXmlPath);
-            CheckDictionary((Dictionary<string, object>)Plist.readPlist(targetXmlPath));
+            var t = WriteXmlInner();
+            waitTaskCompletion(t);
+        }
+
+        private async Task WriteXmlInner()
+        {
+            Plist.writeXml(await CreateDictionary(), targetXmlPath);
+            await CheckDictionary((Dictionary<string, object>)Plist.readPlist(targetXmlPath));
         }
 
         [TestMethod]
         public void ReadWriteBinaryByteArray()
         {
-            CheckDictionary((Dictionary<string, object>)Plist.readPlist(Plist.writeBinary(CreateDictionary())));
+            var t = ReadWriteBinaryByteArrayInner();
+            waitTaskCompletion(t);
+        }
+
+        private async Task ReadWriteBinaryByteArrayInner()
+        {
+            await CheckDictionary((Dictionary<string, object>)Plist.readPlist(Plist.writeBinary(await CreateDictionary())));
         }
     }
 }
