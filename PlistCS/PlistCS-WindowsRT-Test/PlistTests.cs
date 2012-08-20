@@ -31,6 +31,8 @@ namespace Testing
                 largeDict.Add(key, i);
             }
 
+#if false
+            // TODO make valid data.
             using (BinaryReader br = new BinaryReader(File.OpenRead(sourceImage)))
             {
                 dict.Add("testImage", br.ReadBytes((int)br.BaseStream.Length));
@@ -45,6 +47,7 @@ namespace Testing
             dict.Add("testArrayLarge", largeArray);
             dict.Add("testDict", new Dictionary<string, object> { { "test string", "inner dict item" } });
             dict.Add("testDictLarge", largeDict);
+#endif
 
             return dict;
         }

@@ -29,7 +29,13 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Linq;
 using System.Xml;
+using System.Xml.Linq;
+#if NETFX_CORE
+using Windows.Storage;
+using Windows.Storage.Streams;
+#endif
 
 namespace PlistCS
 {
@@ -44,6 +50,19 @@ namespace PlistCS
 
         #region Public Functions
 
+#if NETFX_CORE
+        public static object readPlist(string path)
+        {
+            // TODO implement this.
+            throw new NotImplementedException();
+        }
+
+        public static object readPlist(StorageFile file)
+        {
+            // TODO implement this.
+            throw new NotImplementedException();
+        }
+#else
         public static object readPlist(string path)
         {
             using (FileStream f = new FileStream(path, FileMode.Open, FileAccess.Read))
@@ -51,6 +70,7 @@ namespace PlistCS
                 return readPlist(f, plistType.Auto);
             }
         }
+#endif
 
         public static object readPlistSource(string source)
         {
@@ -95,13 +115,31 @@ namespace PlistCS
             }
             else
             {
-                XmlDocument xml = new XmlDocument();
-                xml.XmlResolver = null;
-                xml.Load(stream);
+                var xml = XDocument.Load(stream, LoadOptions.None);
                 return readXml(xml);
             }
         }
 
+#if NETFX_CORE
+        public static async void writeXml(object value, string path)
+        {
+            var f = await StorageFile.GetFileFromPathAsync(path);
+            writeXml(value, f);
+        }
+
+        public static async void writeXml(object value, StorageFile file)
+        {
+            if (file != null) {
+                using (var transaction = await file.OpenTransactedWriteAsync()) {
+                    using (var writer = new DataWriter(transaction.Stream)) {
+                        writer.WriteString(writeXml(value));
+                        transaction.Stream.Size = await writer.StoreAsync();
+                        await transaction.CommitAsync();
+                    }
+                }
+            }
+        }
+#else
         public static void writeXml(object value, string path)
         {
             using (StreamWriter writer = new StreamWriter(path))
@@ -109,6 +147,7 @@ namespace PlistCS
                 writer.Write(writeXml(value));
             }
         }
+#endif
 
         public static void writeXml(object value, Stream stream)
         {
@@ -138,12 +177,24 @@ namespace PlistCS
                     xmlWriter.WriteEndElement();
                     xmlWriter.WriteEndDocument();
                     xmlWriter.Flush();
-                    xmlWriter.Close();
-                    return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                    return System.Text.Encoding.UTF8.GetString(ms.ToArray(), 0, (int)ms.Length);
                 }
             }
         }
 
+#if NETFX_CORE
+        public static void writeBinary(object value, string path)
+        {
+            // TODO implement this.
+            throw new NotImplementedException();
+        }
+
+        public static void writeBinary(object value, StorageFile file)
+        {
+            // TODO implement this.
+            throw new NotImplementedException();
+        }
+#else
         public static void writeBinary(object value, string path)
         {
             using (BinaryWriter writer = new BinaryWriter(new FileStream(path, FileMode.Create)))
@@ -151,6 +202,7 @@ namespace PlistCS
                 writer.Write(writeBinary(value));
             }
         }
+#endif
 
         public static void writeBinary(object value, Stream stream)
         {
@@ -220,9 +272,9 @@ namespace PlistCS
 
         #region Private Functions
 
-        private static object readXml(XmlDocument xml)
+        private static object readXml(XDocument xml)
         {
-            XmlNode rootNode = xml.DocumentElement.ChildNodes[0];
+            var rootNode = xml.Root.Elements().First<XElement>();
             return (Dictionary<string, object>)parse(rootNode);
         }
 
@@ -251,9 +303,9 @@ namespace PlistCS
             return parseBinary(0);
         }
 
-        private static Dictionary<string, object> parseDictionary(XmlNode node)
+        private static Dictionary<string, object> parseDictionary(XElement node)
         {
-            XmlNodeList children = node.ChildNodes;
+            var children = new List<XElement>(node.Elements());
             if (children.Count % 2 != 0)
             {
                 throw new DataMisalignedException("Dictionary elements must have an even number of child nodes");
@@ -263,30 +315,30 @@ namespace PlistCS
 
             for (int i = 0; i < children.Count; i += 2)
             {
-                XmlNode keynode = children[i];
-                XmlNode valnode = children[i + 1];
+                var keynode = children[i];
+                var valnode = children[i + 1];
 
-                if (keynode.Name != "key")
+                if (keynode.Name.ToString() != "key")
                 {
-                    throw new ApplicationException("expected a key node");
+                    throw new FormatException("expected a key node");
                 }
 
                 object result = parse(valnode);
 
                 if (result != null)
                 {
-                    dict.Add(keynode.InnerText, result);
+                    dict.Add(keynode.Value, result);
                 }
             }
 
             return dict;
         }
 
-        private static List<object> parseArray(XmlNode node)
+        private static List<object> parseArray(XElement node)
         {
             List<object> array = new List<object>();
 
-            foreach (XmlNode child in node.ChildNodes)
+            foreach (var child in node.Elements())
             {
                 object result = parse(child);
                 if (result != null)
@@ -308,35 +360,41 @@ namespace PlistCS
             writer.WriteEndElement();
         }
 
-        private static object parse(XmlNode node)
+        private static object parse(XElement node)
         {
-            switch (node.Name)
+            switch (node.Name.ToString())
             {
                 case "dict":
                     return parseDictionary(node);
                 case "array":
                     return parseArray(node);
                 case "string":
-                    return node.InnerText;
+                    return node.Value;
                 case "integer":
                   //  int result;
                     //int.TryParse(node.InnerText, System.Globalization.NumberFormatInfo.InvariantInfo, out result);
-                    return Convert.ToInt32(node.InnerText, System.Globalization.NumberFormatInfo.InvariantInfo);
+                    return Convert.ToInt32(node.Value, System.Globalization.NumberFormatInfo.InvariantInfo);
                 case "real":
-                    return Convert.ToDouble(node.InnerText,System.Globalization.NumberFormatInfo.InvariantInfo);
+                    return Convert.ToDouble(node.Value,System.Globalization.NumberFormatInfo.InvariantInfo);
                 case "false":
                     return false;
                 case "true":
                     return true;
                 case "null":
                     return null;
-                case "date":
-                    return XmlConvert.ToDateTime(node.InnerText, XmlDateTimeSerializationMode.Utc);
+                case "date": {
+#if NETFX_CORE
+                    var offset = XmlConvert.ToDateTimeOffset(node.Value);
+                    return offset.UtcDateTime;
+#else
+                    return XmlConvert.ToDateTime(node.Value, XmlDateTimeSerializationMode.Utc);
+#endif
+                }
                 case "data":
-                    return Convert.FromBase64String(node.InnerText);
+                    return Convert.FromBase64String(node.Value);
             }
 
-            throw new ApplicationException(String.Format("Plist Node `{0}' is not supported", node.Name));
+            throw new FormatException(String.Format("Plist Node `{0}' is not supported", node.Name));
         }
 
         private static void compose(object value, XmlWriter writer)
@@ -381,7 +439,12 @@ namespace PlistCS
             else if (value is DateTime)
             {
                 DateTime time = (DateTime)value;
+#if NETFX_CORE
+                var offset = new DateTimeOffset(time);
+                var theString = XmlConvert.ToString(offset);
+#else
                 string theString = XmlConvert.ToString(time, XmlDateTimeSerializationMode.Utc);
+#endif
                 writer.WriteElementString("date", theString);//, "yyyy-MM-ddTHH:mm:ssZ"));
             }
             else if (value is bool)
@@ -888,7 +951,12 @@ namespace PlistCS
             int charCount = getCount(headerPosition, out charStartPosition);
 
             var buffer = objectTable.GetRange(charStartPosition, charCount);
-            return buffer.Count > 0 ? Encoding.ASCII.GetString(buffer.ToArray()) : string.Empty;
+#if NETFX_CORE
+            var enc = Encoding.GetEncoding("ascii");
+#else
+            var enc = Encoding.ASCII;
+#endif
+            return buffer.Count > 0 ? enc.GetString(buffer.ToArray(), 0, buffer.Count) : string.Empty;
         }
 
         private static object parseBinaryUnicodeString(int headerPosition)
@@ -917,7 +985,7 @@ namespace PlistCS
                 }
             }
 
-            return Encoding.Unicode.GetString(buffer);
+            return Encoding.Unicode.GetString(buffer, 0, buffer.Length);
         }
 
         private static object parseBinaryByteArray(int headerPosition)
