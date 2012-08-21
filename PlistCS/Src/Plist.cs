@@ -35,6 +35,7 @@ using System.Xml.Linq;
 #if NETFX_CORE
 using Windows.Storage;
 using Windows.Storage.Streams;
+using System.Threading.Tasks;
 #endif
 
 namespace PlistCS
@@ -121,13 +122,13 @@ namespace PlistCS
         }
 
 #if NETFX_CORE
-        public static async void writeXml(object value, string path)
+        public static async Task writeXmlAsync(object value, string path)
         {
             var f = await StorageFile.GetFileFromPathAsync(path);
-            writeXml(value, f);
+            await writeXmlAsync(value, f);
         }
 
-        public static async void writeXml(object value, StorageFile file)
+        public static async Task writeXmlAsync(object value, StorageFile file)
         {
             if (file != null) {
                 using (var transaction = await file.OpenTransactedWriteAsync()) {
@@ -183,15 +184,16 @@ namespace PlistCS
         }
 
 #if NETFX_CORE
-        public static void writeBinary(object value, string path)
+        public static async Task writeBinaryAsync(object value, string path)
         {
-            // TODO implement this.
-            throw new NotImplementedException();
+            var f = await StorageFile.GetFileFromPathAsync(path);
+            await writeBinaryASync(value, f);
         }
 
-        public static void writeBinary(object value, StorageFile file)
+        public static async Task writeBinaryASync(object value, StorageFile file)
         {
             // TODO implement this.
+            var s = await file.OpenStreamForReadAsync();
             throw new NotImplementedException();
         }
 #else
