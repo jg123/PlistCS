@@ -52,16 +52,16 @@ namespace PlistCS
         #region Public Functions
 
 #if NETFX_CORE
-        public static object readPlist(string path)
+        public static async Task<object> readPlistAsync(string path)
         {
-            // TODO implement this.
-            throw new NotImplementedException();
+            var f = await StorageFile.GetFileFromPathAsync(path);
+            return await readPlistAsync(f);
         }
 
-        public static object readPlist(StorageFile file)
+        public static async Task<object> readPlistAsync(StorageFile file)
         {
-            // TODO implement this.
-            throw new NotImplementedException();
+            var s = await file.OpenStreamForReadAsync();
+            return readPlist(s, plistType.Auto);
         }
 #else
         public static object readPlist(string path)
@@ -124,7 +124,9 @@ namespace PlistCS
 #if NETFX_CORE
         public static async Task writeXmlAsync(object value, string path)
         {
-            var f = await StorageFile.GetFileFromPathAsync(path);
+            var dirName = Path.GetDirectoryName(path);
+            var d = await StorageFolder.GetFolderFromPathAsync(dirName);
+            var f = await d.CreateFileAsync(Path.GetFileName(path), CreationCollisionOption.OpenIfExists);
             await writeXmlAsync(value, f);
         }
 
@@ -186,15 +188,16 @@ namespace PlistCS
 #if NETFX_CORE
         public static async Task writeBinaryAsync(object value, string path)
         {
-            var f = await StorageFile.GetFileFromPathAsync(path);
+            var dirName = Path.GetDirectoryName(path);
+            var d = await StorageFolder.GetFolderFromPathAsync(dirName);
+            var f = await d.CreateFileAsync(Path.GetFileName(path), CreationCollisionOption.OpenIfExists);
             await writeBinaryASync(value, f);
         }
 
         public static async Task writeBinaryASync(object value, StorageFile file)
         {
-            // TODO implement this.
-            var s = await file.OpenStreamForReadAsync();
-            throw new NotImplementedException();
+            var s = await file.OpenStreamForWriteAsync();
+            writeBinary(value, s);
         }
 #else
         public static void writeBinary(object value, string path)
@@ -442,7 +445,13 @@ namespace PlistCS
             {
                 DateTime time = (DateTime)value;
 #if NETFX_CORE
-                var offset = new DateTimeOffset(time);
+                var kind = time.Kind;
+                if (kind == DateTimeKind.Unspecified) {
+                    // adhoc fix for compatiblity to existed implementation.
+                    kind = DateTimeKind.Utc;
+                }
+                var utc = new DateTime(time.Ticks, kind);
+                var offset = new DateTimeOffset(utc);
                 var theString = XmlConvert.ToString(offset);
 #else
                 string theString = XmlConvert.ToString(time, XmlDateTimeSerializationMode.Utc);
